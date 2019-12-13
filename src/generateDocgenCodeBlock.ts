@@ -1,6 +1,6 @@
 import path from "path";
-import ts from "typescript";
-import { ComponentDoc, PropItem } from "react-docgen-typescript/lib/parser.js";
+import ts, { JSDocTagInfo } from "typescript";
+import { ComponentDoc, PropItem, Method } from "react-docgen-typescript/lib/parser.js";
 
 export interface GeneratorOptions {
   filename: string;
@@ -39,7 +39,8 @@ export default function generateDocgenCodeBlock(
   const codeBlocks = options.componentDocs.map(d =>
     wrapInTryStatement([
       options.setDisplayName ? setDisplayName(d) : null,
-      setComponentDocGen(d, options),
+      setDocGenInfo(d, options),
+      setComponentDocGen(d),
       options.docgenCollectionName != null
         ? insertDocgenIntoGlobalCollection(
             d,
@@ -67,6 +68,41 @@ export default function generateDocgenCodeBlock(
   return result;
 }
 
+function setDocGenInfo(d: ComponentDoc, options: GeneratorOptions): ts.Statement {
+  return insertTsIgnoreBeforeStatement(
+    ts.createVariableStatement(undefined, [ts.createVariableDeclaration(d.displayName + '__docgenInfo', undefined, ts.createObjectLiteral([
+      // SimpleComponent.__docgenInfo.description
+      ts.createPropertyAssignment(
+        ts.createLiteral("description"),
+        ts.createLiteral(d.description),
+      ),
+      // SimpleComponent.__docgenInfo.displayName
+      ts.createPropertyAssignment(
+        ts.createLiteral("displayName"),
+        ts.createLiteral(d.displayName),
+      ),
+      // SimpleComponent.__docgenInfo.props
+      ts.createPropertyAssignment(
+        ts.createLiteral("props"),
+        ts.createObjectLiteral(
+          Object.entries(d.props).map(([propName, prop]) =>
+            createPropDefinition(propName, prop, options),
+          ),
+        ),
+      ),
+      // SimpleComponent.__docgenInfo.methods
+      ts.createPropertyAssignment(
+        ts.createLiteral("methods"),
+        ts.createObjectLiteral(
+          Object.entries(d.methods).map(([, method]) =>
+          createMethodDefinition(method),
+          ),
+        ),
+      ),
+    ]))])
+  )
+}
+
 /**
  * Set component display name.
  *
@@ -76,17 +112,26 @@ export default function generateDocgenCodeBlock(
  */
 function setDisplayName(d: ComponentDoc): ts.Statement {
   return insertTsIgnoreBeforeStatement(
-    ts.createStatement(
+    ts.createIf(
       ts.createBinary(
-        ts.createPropertyAccess(
-          ts.createIdentifier(d.displayName),
-          ts.createIdentifier("displayName"),
-        ),
-        ts.SyntaxKind.EqualsToken,
-        ts.createLiteral(d.displayName),
+        ts.createTypeOf(ts.createIdentifier(d.displayName)),
+        ts.SyntaxKind.ExclamationEqualsEqualsToken,
+        ts.createLiteral("undefined"),
       ),
-    ),
-  );
+      insertTsIgnoreBeforeStatement(
+        ts.createStatement(
+          ts.createBinary(
+            ts.createPropertyAccess(
+              ts.createIdentifier(d.displayName),
+              ts.createIdentifier("displayName"),
+            ),
+            ts.SyntaxKind.EqualsToken,
+            ts.createLiteral(d.displayName),
+          ),
+        ),
+      ),
+    )
+  )
 }
 
 /**
@@ -106,41 +151,72 @@ function setDisplayName(d: ComponentDoc): ts.Statement {
  */
 function setComponentDocGen(
   d: ComponentDoc,
-  options: GeneratorOptions,
 ): ts.Statement {
   return insertTsIgnoreBeforeStatement(
-    ts.createStatement(
+    ts.createIf(
       ts.createBinary(
-        // SimpleComponent.__docgenInfo
-        ts.createPropertyAccess(
-          ts.createIdentifier(d.displayName),
-          ts.createIdentifier("__docgenInfo"),
-        ),
-        ts.SyntaxKind.EqualsToken,
-        ts.createObjectLiteral([
-          // SimpleComponent.__docgenInfo.description
-          ts.createPropertyAssignment(
-            ts.createLiteral("description"),
-            ts.createLiteral(d.description),
-          ),
-          // SimpleComponent.__docgenInfo.displayName
-          ts.createPropertyAssignment(
-            ts.createLiteral("displayName"),
-            ts.createLiteral(d.displayName),
-          ),
-          // SimpleComponent.__docgenInfo.props
-          ts.createPropertyAssignment(
-            ts.createLiteral("props"),
-            ts.createObjectLiteral(
-              Object.entries(d.props).map(([propName, prop]) =>
-                createPropDefinition(propName, prop, options),
-              ),
-            ),
-          ),
-        ]),
+        ts.createTypeOf(ts.createIdentifier(d.displayName)),
+        ts.SyntaxKind.ExclamationEqualsEqualsToken,
+        ts.createLiteral("undefined"),
       ),
-    ),
+      insertTsIgnoreBeforeStatement(
+        ts.createStatement(
+          ts.createBinary(
+            // SimpleComponent.__docgenInfo
+            ts.createPropertyAccess(
+              ts.createIdentifier(d.displayName),
+              ts.createIdentifier("__docgenInfo"),
+            ),
+            ts.SyntaxKind.EqualsToken,
+            ts.createIdentifier(d.displayName + '__docgenInfo')
+          ),
+        ),
+      )
+    )
   );
+}
+
+function createMethodDefinition(method: Method) {
+  var setParams = function(params: Method["params"]) {
+      var paramsType = ts.createObjectLiteral(params.map(param => {
+          return ts.createPropertyAssignment(ts.createIdentifier(param.name), ts.createObjectLiteral([
+            ts.createPropertyAssignment("type", ts.createLiteral(param.type.name)),
+            ts.createPropertyAssignment("des", ts.createLiteral(param.description || "")),
+          ]))
+      }));
+      return ts.createPropertyAssignment(ts.createLiteral("paramsType"), paramsType);
+  }
+  var setReturn = function(returns: Method['returns']) {
+      return ts.createPropertyAssignment(ts.createLiteral("returnType"), ts.createObjectLiteral([
+        ts.createPropertyAssignment("type", ts.createLiteral(returns ? returns.type || "" : 'void')),
+        ts.createPropertyAssignment("des", ts.createLiteral(returns ? returns.description || "" : ""))
+      ]));
+  }
+  var setStringLiteralField = function (fieldName: string, fieldValue: string) {
+      return ts.createPropertyAssignment(ts.createLiteral(fieldName), ts.createLiteral(fieldValue));
+  };
+  var setName = function (name: string) { return setStringLiteralField("name", name); };
+  var setDes = function (des: string) { return setStringLiteralField("des", des); };
+  var setStatic = function (modifiers: string[]) { 
+    return ts.createPropertyAssignment("isStatic", ts.createLiteral(modifiers.includes("static") ? "yes" : "no"))
+  };
+  var setJsDocTags = function(jsDocTags: JSDocTagInfo[]) {
+    return ts.createPropertyAssignment(
+      "jsDocTags",
+      ts.createArrayLiteral(jsDocTags.map((value) => ts.createObjectLiteral([
+        ts.createPropertyAssignment("name", ts.createLiteral(value.name)),
+        ts.createPropertyAssignment("text", ts.createLiteral(value.text || "")),
+      ])))
+    )
+  }
+  return ts.createPropertyAssignment(ts.createLiteral(method.name), ts.createObjectLiteral([
+      setParams(method.params),
+      setReturn(method.returns),
+      setName(method.name),
+      setDes(method.description),
+      setStatic(method.modifiers),
+      setJsDocTags(method.jsDocTags)
+  ]));
 }
 
 /**
@@ -331,10 +407,7 @@ function insertDocgenIntoGlobalCollection(
             ts.createObjectLiteral([
               ts.createPropertyAssignment(
                 ts.createIdentifier("docgenInfo"),
-                ts.createPropertyAccess(
-                  ts.createIdentifier(d.displayName),
-                  ts.createIdentifier("__docgenInfo"),
-                ),
+                ts.createIdentifier(d.displayName + '__docgenInfo')
               ),
               ts.createPropertyAssignment(
                 ts.createIdentifier("name"),

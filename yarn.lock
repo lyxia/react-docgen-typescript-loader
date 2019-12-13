@@ -3979,10 +3979,10 @@ rc@^1.2.7:
     minimist "^1.2.0"
     strip-json-comments "~2.0.1"
 
-react-docgen-typescript@^1.15.0:
-  version "1.15.0"
-  resolved "https://registry.yarnpkg.com/react-docgen-typescript/-/react-docgen-typescript-1.15.0.tgz#963f14210841f9b51ed18c65152a6cc37f1c3184"
-  integrity sha512-8xObdkRQbrc0505tEdVRO+pdId8pKFyD6jhLYM9FDdceKma+iB+a17Dk7e3lPRBRh8ArQLCedOCOfN/bO338kw==
+react-docgen-typescript@1.15.102:
+  version "1.15.102"
+  resolved "http://npm.xiaopeng.local:7001/react-docgen-typescript/-/react-docgen-typescript-1.15.102.tgz#e3cdb515ea4d7c5e96df90b9cf7a65ba16b55d1c"
+  integrity sha512-gdnrih49c6W8urBM2hw/9d8ocTSPWmIoZlHfJLiM41fsUZtmI3n5rU8dnO1Ps+28C+31KO7mGKpgdyyuiQSbPg==
 
 react-is@^16.8.4:
   version "16.9.0"
